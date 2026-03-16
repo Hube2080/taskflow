@@ -1,4 +1,5 @@
-- [ ] CSV-Datei antigone_asana_projektplan.csv analysieren und Import robust machen
-- [ ] Neues Projekt über Plus-Button in der Sidebar anlegen können
-- [ ] Browser-Test für CSV-Import und Projekterstellung durchführen
-- [ ] Fehler beheben: Plus neben Projekte öffnet/erstellt im aktuellen Stand nicht zuverlässig
+# Project TODO
+
+- [x] TaskFlow auf Full-Stack upgraden
+- [x] Datei-Speicherfunktion für Projektdateien integrieren
+- [x] Upload- und Datei-Management-UX in der App einbauen

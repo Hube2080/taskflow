@@ -1,31 +1,25 @@
-/*
- * TaskDetailPanel – Swiss Precision Design
- * Slides in from right, shows full task details
- * Title, description, status, priority, dates, subtasks, comments
- */
-
+import { useMemo, useRef, useState } from "react";
+import { nanoid } from "nanoid";
+import { CalendarDays, CheckSquare, Clock, FileUp, Loader2, MessageSquare, Paperclip, Plus, Send, Tag, Trash2, User } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
 import {
-  getTaskById,
+  createTask,
   getSubtasks,
+  getTaskById,
   getTaskComments,
   getUserById,
   PRIORITY_CONFIG,
   STATUS_CONFIG,
-  createTask,
+  type Priority,
   type Task,
   type TaskStatus,
-  type Priority,
 } from "@/lib/store";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -33,22 +27,41 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  CalendarDays,
-  CheckSquare,
-  Clock,
-  MessageSquare,
-  Paperclip,
-  Send,
-  Tag,
-  User,
-  X,
-  Plus,
-  Trash2,
-} from "lucide-react";
-import { useState } from "react";
-import { nanoid } from "nanoid";
-import { motion, AnimatePresence } from "framer-motion";
+import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+
+function formatTimestamp(dateString: string) {
+  return new Date(dateString).toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatDateTime(dateString: string) {
+  return new Date(dateString).toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+async function fileToBase64(file: File) {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const base64 = result.includes(",") ? result.split(",")[1] ?? "" : result;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Datei konnte nicht gelesen werden"));
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function TaskDetailPanel() {
   const { state, dispatch } = useApp();
@@ -57,8 +70,8 @@ export default function TaskDetailPanel() {
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && dispatch({ type: "SELECT_TASK", taskId: null })}>
-      <SheetContent className="w-[520px] sm:max-w-[520px] p-0 border-l border-border">
-        {task && <TaskDetailContent task={task} />}
+      <SheetContent className="w-[560px] sm:max-w-[560px] p-0 border-l border-border">
+        {task ? <TaskDetailContent task={task} /> : null}
       </SheetContent>
     </Sheet>
   );
@@ -68,9 +81,9 @@ function TaskDetailContent({ task }: { task: Task }) {
   const { state, dispatch } = useApp();
   const subtasks = getSubtasks(state, task.id);
   const comments = getTaskComments(state, task.id);
-  const assignee = task.assigneeId ? getUserById(state, task.assigneeId) : null;
   const parentTask = task.parentId ? getTaskById(state, task.parentId) : null;
-  const section = state.sections.find((s) => s.id === task.sectionId);
+  const section = state.sections.find((entry) => entry.id === task.sectionId);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [newComment, setNewComment] = useState("");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -80,70 +93,116 @@ function TaskDetailContent({ task }: { task: Task }) {
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [showAddSubtask, setShowAddSubtask] = useState(false);
 
+  const trpcUtils = trpc.useUtils();
+  const filesQuery = trpc.files.list.useQuery({ projectId: task.projectId, taskId: task.id });
+  const uploadMutation = trpc.files.upload.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.files.list.invalidate({ projectId: task.projectId, taskId: task.id });
+      toast.success("Datei wurde gespeichert.");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Datei konnte nicht hochgeladen werden.");
+    },
+  });
+
+  const completedSubtasks = useMemo(
+    () => subtasks.filter((subtask) => subtask.status === "done").length,
+    [subtasks]
+  );
+
   const handleAddComment = () => {
-    if (newComment.trim()) {
-      dispatch({
-        type: "ADD_COMMENT",
-        comment: {
-          id: nanoid(8),
-          taskId: task.id,
-          userId: "u1",
-          content: newComment.trim(),
-          createdAt: new Date().toISOString(),
-        },
-      });
-      setNewComment("");
-    }
+    if (!newComment.trim()) return;
+
+    dispatch({
+      type: "ADD_COMMENT",
+      comment: {
+        id: nanoid(8),
+        taskId: task.id,
+        userId: "u1",
+        content: newComment.trim(),
+        createdAt: new Date().toISOString(),
+      },
+    });
+    setNewComment("");
   };
 
   const handleAddSubtask = () => {
-    if (newSubtaskTitle.trim()) {
-      const newTask = createTask(task.projectId, task.sectionId, newSubtaskTitle.trim(), task.id);
-      dispatch({ type: "ADD_TASK", task: newTask });
-      setNewSubtaskTitle("");
-      setShowAddSubtask(false);
+    if (!newSubtaskTitle.trim()) return;
+
+    const newTask = createTask(task.projectId, task.sectionId, newSubtaskTitle.trim(), task.id);
+    dispatch({ type: "ADD_TASK", task: newTask });
+    setNewSubtaskTitle("");
+    setShowAddSubtask(false);
+    toast.success("Unteraufgabe wurde hinzugefügt.");
+  };
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0];
+    event.target.value = "";
+    if (!selected) return;
+
+    if (selected.size > 15 * 1024 * 1024) {
+      toast.error("Bitte eine Datei bis maximal 15 MB auswählen.");
+      return;
+    }
+
+    try {
+      const base64 = await fileToBase64(selected);
+      await uploadMutation.mutateAsync({
+        projectId: task.projectId,
+        taskId: task.id,
+        fileName: selected.name,
+        mimeType: selected.type || "application/octet-stream",
+        base64,
+        sizeBytes: selected.size,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Datei konnte nicht gelesen werden.");
     }
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-6 pt-5 pb-4 border-b border-border">
-        {parentTask && (
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border px-6 pb-4 pt-5">
+        {parentTask ? (
           <button
             onClick={() => dispatch({ type: "SELECT_TASK", taskId: parentTask.id })}
-            className="text-[11px] text-primary hover:underline mb-1 block"
+            className="mb-1 block text-[11px] text-primary hover:underline"
           >
             ← {parentTask.title}
           </button>
-        )}
-        {section && (
-          <div className="flex items-center gap-1.5 mb-2">
+        ) : null}
+        {section ? (
+          <div className="mb-2 flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full" style={{ backgroundColor: section.color }} />
             <span className="text-[11px] text-muted-foreground">{section.title}</span>
           </div>
-        )}
+        ) : null}
 
         {isEditingTitle ? (
           <Input
             value={editTitle}
-            onChange={(e) => setEditTitle(e.target.value)}
+            onChange={(event) => setEditTitle(event.target.value)}
             onBlur={() => {
               dispatch({ type: "UPDATE_TASK", taskId: task.id, updates: { title: editTitle } });
               setIsEditingTitle(false);
             }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
                 dispatch({ type: "UPDATE_TASK", taskId: task.id, updates: { title: editTitle } });
                 setIsEditingTitle(false);
               }
             }}
-            className="text-lg font-bold border-0 p-0 h-auto focus-visible:ring-0 shadow-none"
+            className="h-auto border-0 p-0 text-lg font-bold shadow-none focus-visible:ring-0"
             autoFocus
           />
         ) : (
           <h2
-            className="text-lg font-bold tracking-tight cursor-text hover:text-primary/80 transition-colors"
+            className="cursor-text text-lg font-bold tracking-tight transition-colors hover:text-primary/80"
             onClick={() => {
               setEditTitle(task.title);
               setIsEditingTitle(true);
@@ -155,130 +214,121 @@ function TaskDetailContent({ task }: { task: Task }) {
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="px-6 py-4 space-y-5">
-          {/* Properties Grid */}
-          <div className="grid grid-cols-[100px_1fr] gap-y-3 gap-x-4 text-[13px]">
-            {/* Status */}
-            <span className="text-muted-foreground flex items-center gap-1.5">
+        <div className="space-y-5 px-6 py-4">
+          <div className="grid grid-cols-[100px_1fr] gap-x-4 gap-y-3 text-[13px]">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
               <Clock size={14} /> Status
             </span>
             <Select
               value={task.status}
-              onValueChange={(val) =>
-                dispatch({ type: "UPDATE_TASK", taskId: task.id, updates: { status: val as TaskStatus } })
+              onValueChange={(value) =>
+                dispatch({ type: "UPDATE_TASK", taskId: task.id, updates: { status: value as TaskStatus } })
               }
             >
-              <SelectTrigger className="h-8 text-[13px] w-[160px]">
+              <SelectTrigger className="h-8 w-[180px] text-[13px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(Object.keys(STATUS_CONFIG) as TaskStatus[]).map((s) => (
-                  <SelectItem key={s} value={s} className="text-[13px]">
-                    {STATUS_CONFIG[s].label}
+                {(Object.keys(STATUS_CONFIG) as TaskStatus[]).map((status) => (
+                  <SelectItem key={status} value={status} className="text-[13px]">
+                    {STATUS_CONFIG[status].label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
 
-            {/* Priority */}
-            <span className="text-muted-foreground flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
               <Tag size={14} /> Priorität
             </span>
             <Select
               value={task.priority}
-              onValueChange={(val) =>
-                dispatch({ type: "UPDATE_TASK", taskId: task.id, updates: { priority: val as Priority } })
+              onValueChange={(value) =>
+                dispatch({ type: "UPDATE_TASK", taskId: task.id, updates: { priority: value as Priority } })
               }
             >
-              <SelectTrigger className="h-8 text-[13px] w-[160px]">
+              <SelectTrigger className="h-8 w-[180px] text-[13px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(Object.keys(PRIORITY_CONFIG) as Priority[]).map((p) => (
-                  <SelectItem key={p} value={p} className="text-[13px]">
-                    {PRIORITY_CONFIG[p].label}
+                {(Object.keys(PRIORITY_CONFIG) as Priority[]).map((priority) => (
+                  <SelectItem key={priority} value={priority} className="text-[13px]">
+                    {PRIORITY_CONFIG[priority].label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
 
-            {/* Assignee */}
-            <span className="text-muted-foreground flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
               <User size={14} /> Zuständig
             </span>
             <Select
               value={task.assigneeId || "unassigned"}
-              onValueChange={(val) =>
+              onValueChange={(value) =>
                 dispatch({
                   type: "UPDATE_TASK",
                   taskId: task.id,
-                  updates: { assigneeId: val === "unassigned" ? null : val },
+                  updates: { assigneeId: value === "unassigned" ? null : value },
                 })
               }
             >
-              <SelectTrigger className="h-8 text-[13px] w-[160px]">
+              <SelectTrigger className="h-8 w-[180px] text-[13px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="unassigned" className="text-[13px]">
                   Nicht zugewiesen
                 </SelectItem>
-                {state.users.map((u) => (
-                  <SelectItem key={u.id} value={u.id} className="text-[13px]">
-                    {u.name}
+                {state.users.map((user) => (
+                  <SelectItem key={user.id} value={user.id} className="text-[13px]">
+                    {user.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
 
-            {/* Due Date */}
-            <span className="text-muted-foreground flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
               <CalendarDays size={14} /> Fällig
             </span>
             <div className="flex items-center gap-2">
               <Input
                 type="date"
                 value={task.dueDate || ""}
-                onChange={(e) =>
-                  dispatch({ type: "UPDATE_TASK", taskId: task.id, updates: { dueDate: e.target.value || null } })
+                onChange={(event) =>
+                  dispatch({ type: "UPDATE_TASK", taskId: task.id, updates: { dueDate: event.target.value || null } })
                 }
-                className="h-8 text-[13px] w-[160px]"
+                className="h-8 w-[180px] text-[13px]"
               />
-              {task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "done" && (
-                <span className="text-[10px] text-red-600 font-medium">Überfällig</span>
-              )}
+              {task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "done" ? (
+                <span className="text-[10px] font-medium text-red-600">Überfällig</span>
+              ) : null}
             </div>
 
-            {/* Start Date */}
-            <span className="text-muted-foreground flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
               <CalendarDays size={14} /> Start
             </span>
             <Input
               type="date"
               value={task.startDate || ""}
-              onChange={(e) =>
-                dispatch({ type: "UPDATE_TASK", taskId: task.id, updates: { startDate: e.target.value || null } })
+              onChange={(event) =>
+                dispatch({ type: "UPDATE_TASK", taskId: task.id, updates: { startDate: event.target.value || null } })
               }
-              className="h-8 text-[13px] w-[160px]"
+              className="h-8 w-[180px] text-[13px]"
             />
           </div>
 
           <Separator />
 
-          {/* Description */}
           <div>
-            <h3 className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-              Beschreibung
-            </h3>
+            <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Beschreibung</h3>
             {isEditingDesc ? (
               <div>
                 <Textarea
                   value={editDesc}
-                  onChange={(e) => setEditDesc(e.target.value)}
-                  className="text-[13px] min-h-[100px]"
+                  onChange={(event) => setEditDesc(event.target.value)}
+                  className="min-h-[100px] text-[13px]"
                   autoFocus
                 />
-                <div className="flex gap-2 mt-2">
+                <div className="mt-2 flex gap-2">
                   <Button
                     size="sm"
                     className="h-7 text-[12px]"
@@ -296,7 +346,7 @@ function TaskDetailContent({ task }: { task: Task }) {
               </div>
             ) : (
               <div
-                className="text-[13px] text-muted-foreground leading-relaxed cursor-text hover:bg-muted/30 rounded-md p-2 -mx-2 transition-colors min-h-[40px]"
+                className="-mx-2 min-h-[40px] cursor-text rounded-md p-2 text-[13px] leading-relaxed text-muted-foreground transition-colors hover:bg-muted/30"
                 onClick={() => {
                   setEditDesc(task.description);
                   setIsEditingDesc(true);
@@ -307,93 +357,156 @@ function TaskDetailContent({ task }: { task: Task }) {
             )}
           </div>
 
-          {/* Subtasks */}
+          <Separator />
+
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <CheckSquare size={13} />
-                Unteraufgaben
-                {subtasks.length > 0 && (
-                  <span className="font-mono">
-                    ({subtasks.filter((s) => s.status === "done").length}/{subtasks.length})
-                  </span>
-                )}
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <CheckSquare size={13} /> Unteraufgaben
+                <span className="font-mono">({completedSubtasks}/{subtasks.length})</span>
               </h3>
-              <button
-                onClick={() => setShowAddSubtask(true)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-[12px]"
+                onClick={() => setShowAddSubtask((current) => !current)}
               >
-                <Plus size={14} />
-              </button>
+                <Plus size={14} /> Unteraufgabe hinzufügen
+              </Button>
             </div>
 
-            {subtasks.length > 0 && (
+            {subtasks.length > 0 ? (
               <div className="space-y-1">
-                {subtasks.map((sub) => (
+                {subtasks.map((subtask) => (
                   <div
-                    key={sub.id}
-                    className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-muted/30 transition-colors group"
+                    key={subtask.id}
+                    className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-muted/30"
                   >
                     <Checkbox
-                      checked={sub.status === "done"}
+                      checked={subtask.status === "done"}
                       onCheckedChange={(checked) =>
                         dispatch({
                           type: "UPDATE_TASK",
-                          taskId: sub.id,
+                          taskId: subtask.id,
                           updates: { status: checked ? "done" : "todo" },
                         })
                       }
                       className="h-3.5 w-3.5"
                     />
                     <span
-                      className={`text-[13px] flex-1 cursor-pointer ${
-                        sub.status === "done" ? "line-through text-muted-foreground" : ""
-                      }`}
-                      onClick={() => dispatch({ type: "SELECT_TASK", taskId: sub.id })}
+                      className={`flex-1 cursor-pointer text-[13px] ${subtask.status === "done" ? "line-through text-muted-foreground" : ""}`}
+                      onClick={() => dispatch({ type: "SELECT_TASK", taskId: subtask.id })}
                     >
-                      {sub.title}
+                      {subtask.title}
                     </span>
                     <button
-                      onClick={() => dispatch({ type: "DELETE_TASK", taskId: sub.id })}
-                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
+                      onClick={() => dispatch({ type: "DELETE_TASK", taskId: subtask.id })}
+                      className="text-muted-foreground opacity-0 transition-all hover:text-destructive group-hover:opacity-100"
                     >
                       <Trash2 size={12} />
                     </button>
                   </div>
                 ))}
               </div>
-            )}
-
-            {showAddSubtask && (
-              <div className="flex items-center gap-2 mt-2">
-                <Input
-                  value={newSubtaskTitle}
-                  onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                  placeholder="Neue Unteraufgabe..."
-                  className="text-[13px] h-8 flex-1"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleAddSubtask();
-                    if (e.key === "Escape") {
-                      setShowAddSubtask(false);
-                      setNewSubtaskTitle("");
-                    }
-                  }}
-                />
-                <Button size="sm" className="h-8 text-[12px]" onClick={handleAddSubtask}>
-                  Hinzufügen
-                </Button>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-3 text-[13px] text-muted-foreground">
+                Für diese Aufgabe gibt es noch keine Unteraufgaben.
               </div>
             )}
+
+            {showAddSubtask ? (
+              <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3">
+                <div className="mb-2 text-[12px] font-medium text-foreground">Neue Unteraufgabe</div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={newSubtaskTitle}
+                    onChange={(event) => setNewSubtaskTitle(event.target.value)}
+                    placeholder="Zum Beispiel: Hardwarecheck dokumentieren"
+                    className="h-9 flex-1 text-[13px]"
+                    autoFocus
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") handleAddSubtask();
+                      if (event.key === "Escape") {
+                        setShowAddSubtask(false);
+                        setNewSubtaskTitle("");
+                      }
+                    }}
+                  />
+                  <Button size="sm" className="h-9 text-[12px]" onClick={handleAddSubtask}>
+                    Hinzufügen
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <Separator />
 
-          {/* Comments */}
           <div>
-            <h3 className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mb-3">
-              <MessageSquare size={13} />
-              Kommentare ({comments.length})
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <Paperclip size={13} /> Dateien
+              </h3>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-[12px]"
+                onClick={handleUploadClick}
+                disabled={uploadMutation.isPending}
+              >
+                {uploadMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <FileUp size={14} />}
+                Datei hochladen
+              </Button>
+            </div>
+
+            <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelection} />
+
+            <div className="rounded-xl border border-border bg-muted/15 p-3">
+              <div className="mb-3 text-[12px] text-muted-foreground">
+                Dateien werden jetzt serverseitig gespeichert und bleiben projektbezogen verfügbar.
+              </div>
+
+              {filesQuery.isLoading ? (
+                <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                  <Loader2 size={14} className="animate-spin" /> Dateien werden geladen...
+                </div>
+              ) : filesQuery.data && filesQuery.data.length > 0 ? (
+                <div className="space-y-2">
+                  {filesQuery.data.map((file) => (
+                    <a
+                      key={file.id}
+                      href={file.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 transition-colors hover:bg-muted/30"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-medium text-foreground">{file.originalName}</div>
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">
+                          {Math.max(1, Math.round(file.sizeBytes / 1024))} KB · {formatDateTime(String(file.createdAt))}
+                        </div>
+                      </div>
+                      <Badge variant="secondary" className="ml-3 shrink-0">
+                        {file.mimeType.split("/")[1] || "Datei"}
+                      </Badge>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-border bg-background px-4 py-4 text-[13px] text-muted-foreground">
+                  Noch keine Dateien vorhanden. Lade hier Briefings, Screenshots oder Dokumente direkt zu dieser Aufgabe hoch.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <Separator />
+
+          <div>
+            <h3 className="mb-3 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <MessageSquare size={13} /> Kommentare ({comments.length})
             </h3>
 
             <div className="space-y-3">
@@ -401,54 +514,46 @@ function TaskDetailContent({ task }: { task: Task }) {
                 const user = getUserById(state, comment.userId);
                 return (
                   <div key={comment.id} className="flex items-start gap-2.5">
-                    <Avatar className="h-7 w-7 mt-0.5">
+                    <Avatar className="mt-0.5 h-7 w-7">
                       <AvatarFallback
                         className="text-[9px] font-semibold"
                         style={{
-                          backgroundColor: (user?.color || "#888") + "18",
+                          backgroundColor: `${user?.color || "#888"}18`,
                           color: user?.color || "#888",
                         }}
                       >
                         {user?.initials || "?"}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="text-[12px] font-semibold">{user?.name}</span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {new Date(comment.createdAt).toLocaleDateString("de-DE", {
-                            day: "2-digit",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
+                        <span className="text-[10px] text-muted-foreground">{formatDateTime(comment.createdAt)}</span>
                       </div>
-                      <p className="text-[13px] text-foreground/80 mt-0.5 leading-relaxed">{comment.content}</p>
+                      <p className="mt-0.5 text-[13px] leading-relaxed text-foreground/80">{comment.content}</p>
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Add Comment */}
-            <div className="flex items-start gap-2.5 mt-4">
-              <Avatar className="h-7 w-7 mt-0.5">
+            <div className="mt-4 flex items-start gap-2.5">
+              <Avatar className="mt-0.5 h-7 w-7">
                 <AvatarFallback
                   className="text-[9px] font-semibold"
-                  style={{ backgroundColor: state.users[0].color + "18", color: state.users[0].color }}
+                  style={{ backgroundColor: `${state.users[0].color}18`, color: state.users[0].color }}
                 >
                   {state.users[0].initials}
                 </AvatarFallback>
               </Avatar>
-              <div className="flex-1 flex items-end gap-2">
+              <div className="flex flex-1 items-end gap-2">
                 <Textarea
                   value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
+                  onChange={(event) => setNewComment(event.target.value)}
                   placeholder="Kommentar schreiben..."
-                  className="text-[13px] min-h-[60px] resize-none flex-1"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleAddComment();
+                  className="min-h-[60px] flex-1 resize-none text-[13px]"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) handleAddComment();
                   }}
                 />
                 <Button
@@ -466,14 +571,9 @@ function TaskDetailContent({ task }: { task: Task }) {
         </div>
       </ScrollArea>
 
-      {/* Footer */}
-      <div className="px-6 py-3 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>
-          Erstellt: {new Date(task.createdAt).toLocaleDateString("de-DE", { day: "2-digit", month: "short", year: "numeric" })}
-        </span>
-        <span>
-          Aktualisiert: {new Date(task.updatedAt).toLocaleDateString("de-DE", { day: "2-digit", month: "short", year: "numeric" })}
-        </span>
+      <div className="flex items-center justify-between border-t border-border px-6 py-3 text-[11px] text-muted-foreground">
+        <span>Erstellt: {formatTimestamp(task.createdAt)}</span>
+        <span>Aktualisiert: {formatTimestamp(task.updatedAt)}</span>
       </div>
     </div>
   );

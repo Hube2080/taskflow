@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { useState, useRef, useCallback } from "react";
 import { nanoid } from "nanoid";
+import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 
 const EMPTY_STATE_IMG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663408581627/ZjqY3urez3ktbmb44tfhgb/empty-state-import-2jWtkTvXQkFn4ijhier6XB.webp";
@@ -145,6 +146,7 @@ function cleanCell(value: string) {
 
 export default function CsvImport() {
   const { state, dispatch } = useApp();
+  const [, setLocation] = useLocation();
   const [step, setStep] = useState<Step>("upload");
   const [fileName, setFileName] = useState("");
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
@@ -160,7 +162,10 @@ export default function CsvImport() {
   });
   const [parsedTasks, setParsedTasks] = useState<ParsedTask[]>([]);
   const [targetProjectId, setTargetProjectId] = useState(state.currentProjectId || "p1");
-  const [importResult, setImportResult] = useState<{ tasks: number; subtasks: number; sections: number } | null>(null);
+  const [createNewProject, setCreateNewProject] = useState(false);
+  const [newProjectTitle, setNewProjectTitle] = useState("");
+  const [newProjectDescription, setNewProjectDescription] = useState("");
+  const [importResult, setImportResult] = useState<{ tasks: number; subtasks: number; sections: number; projectId: string; projectTitle: string; createdProject: boolean } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -267,11 +272,37 @@ export default function CsvImport() {
   const executeImport = () => {
     const sectionMap = new Map<string, string>();
     const taskMap = new Map<string, string>();
-    const project = state.projects.find((p) => p.id === targetProjectId);
-    if (!project) return;
+
+    const now = new Date().toISOString();
+    const projectColors = ["#4F46E5", "#0F766E", "#B45309", "#7C3AED", "#DC2626", "#2563EB"];
+
+    let effectiveProjectId = targetProjectId;
+    let effectiveProjectTitle = state.projects.find((p) => p.id === targetProjectId)?.title || "Importiertes Projekt";
+    let createdProject = false;
+
+    const createdProjectRecord = createNewProject
+      ? {
+          id: `p_${nanoid(8)}`,
+          title: newProjectTitle.trim() || fileName.replace(/\.csv$/i, "") || "Importiertes Projekt",
+          description: newProjectDescription.trim() || `Importiert aus ${fileName || "CSV-Datei"}.`,
+          color: projectColors[state.projects.length % projectColors.length],
+          createdAt: now,
+          updatedAt: now,
+        }
+      : null;
+
+    if (createdProjectRecord) {
+      effectiveProjectId = createdProjectRecord.id;
+      effectiveProjectTitle = createdProjectRecord.title;
+      createdProject = true;
+    } else {
+      const project = state.projects.find((p) => p.id === targetProjectId);
+      if (!project) return;
+      effectiveProjectTitle = project.title;
+    }
 
     // Create sections
-    const existingSections = state.sections.filter((s) => s.projectId === targetProjectId);
+    const existingSections = state.sections.filter((s) => s.projectId === effectiveProjectId);
     const newSections: Section[] = [];
     const sectionColors = ["#6366F1", "#8B5CF6", "#0891B2", "#059669", "#DC2626", "#D97706"];
 
@@ -285,7 +316,7 @@ export default function CsvImport() {
           sectionMap.set(pt.section, id);
           newSections.push({
             id,
-            projectId: targetProjectId,
+            projectId: effectiveProjectId,
             title: pt.section,
             order: existingSections.length + newSections.length,
             color: sectionColors[(existingSections.length + newSections.length) % sectionColors.length],
@@ -299,7 +330,7 @@ export default function CsvImport() {
     if (existingSections.length === 0 && newSections.length === 0) {
       newSections.push({
         id: defaultSectionId,
-        projectId: targetProjectId,
+        projectId: effectiveProjectId,
         title: "Importiert",
         order: 0,
         color: "#6366F1",
@@ -314,7 +345,7 @@ export default function CsvImport() {
       const sectionId = pt.section ? (sectionMap.get(pt.section) || defaultSectionId) : defaultSectionId;
       const task: Task = {
         id: nanoid(8),
-        projectId: targetProjectId,
+        projectId: effectiveProjectId,
         sectionId,
         parentId: null,
         title: pt.title,
@@ -324,8 +355,8 @@ export default function CsvImport() {
         assigneeId: null,
         startDate: pt.startDate || null,
         dueDate: pt.dueDate || null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         order: idx,
       };
       taskMap.set(pt.title, task.id);
@@ -343,7 +374,7 @@ export default function CsvImport() {
 
       const task: Task = {
         id: nanoid(8),
-        projectId: targetProjectId,
+        projectId: effectiveProjectId,
         sectionId,
         parentId,
         title: pt.title,
@@ -353,8 +384,8 @@ export default function CsvImport() {
         assigneeId: null,
         startDate: pt.startDate || null,
         dueDate: pt.dueDate || null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         order: idx,
       };
       newTasks.push(task);
@@ -362,16 +393,29 @@ export default function CsvImport() {
 
     const importRun: ImportRun = {
       id: nanoid(8),
-      projectId: targetProjectId,
+      projectId: effectiveProjectId,
       fileName,
       rowCount: csvRows.length,
       taskCount: topLevel.length,
       subtaskCount: subtaskEntries.length,
-      importedAt: new Date().toISOString(),
+      importedAt: now,
     };
 
-    dispatch({ type: "IMPORT_TASKS", projectId: targetProjectId, tasks: newTasks, sections: newSections, importRun });
-    setImportResult({ tasks: topLevel.length, subtasks: subtaskEntries.length, sections: newSections.length });
+    if (createdProjectRecord) {
+      dispatch({ type: "ADD_PROJECT", project: createdProjectRecord });
+      setTargetProjectId(createdProjectRecord.id);
+    }
+
+    dispatch({ type: "IMPORT_TASKS", projectId: effectiveProjectId, tasks: newTasks, sections: newSections, importRun });
+    dispatch({ type: "SET_CURRENT_PROJECT", projectId: effectiveProjectId });
+    setImportResult({
+      tasks: topLevel.length,
+      subtasks: subtaskEntries.length,
+      sections: newSections.length,
+      projectId: effectiveProjectId,
+      projectTitle: effectiveProjectTitle,
+      createdProject,
+    });
     setStep("success");
   };
 
@@ -551,22 +595,67 @@ export default function CsvImport() {
                       </div>
                     ))}
 
-                    <div>
-                      <label className="text-[12px] font-medium text-muted-foreground mb-1.5 block">
-                        Zielprojekt
-                      </label>
-                      <Select value={targetProjectId} onValueChange={setTargetProjectId}>
-                        <SelectTrigger className="h-9 text-[13px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {state.projects.map((p) => (
-                            <SelectItem key={p.id} value={p.id} className="text-[13px]">
-                              {p.title}
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[12px] font-medium text-muted-foreground mb-1.5 block">
+                          Zielprojekt
+                        </label>
+                        <Select
+                          value={createNewProject ? "__new__" : targetProjectId}
+                          onValueChange={(value) => {
+                            if (value === "__new__") {
+                              setCreateNewProject(true);
+                            } else {
+                              setCreateNewProject(false);
+                              setTargetProjectId(value);
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="h-9 text-[13px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__new__" className="text-[13px]">
+                              Neues Projekt aus Import erstellen
                             </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                            {state.projects.map((p) => (
+                              <SelectItem key={p.id} value={p.id} className="text-[13px]">
+                                {p.title}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {createNewProject && (
+                        <div className="rounded-xl border border-border bg-muted/25 p-3 space-y-3">
+                          <div>
+                            <label className="text-[12px] font-medium text-muted-foreground mb-1.5 block">
+                              Neuer Projektname
+                            </label>
+                            <input
+                              value={newProjectTitle}
+                              onChange={(event) => setNewProjectTitle(event.target.value)}
+                              placeholder={fileName ? fileName.replace(/\.csv$/i, "") : "Importiertes Projekt"}
+                              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-[13px] shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[12px] font-medium text-muted-foreground mb-1.5 block">
+                              Kurzbeschreibung
+                            </label>
+                            <textarea
+                              value={newProjectDescription}
+                              onChange={(event) => setNewProjectDescription(event.target.value)}
+                              placeholder="Optional: kurze Beschreibung des importierten Projekts"
+                              className="flex min-h-[88px] w-full rounded-md border border-input bg-background px-3 py-2 text-[13px] shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            />
+                          </div>
+                          <p className="text-[11px] leading-5 text-muted-foreground">
+                            Das Projekt wird beim Import automatisch angelegt, direkt ausgewählt und danach in der Sidebar sichtbar sein.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -789,7 +878,7 @@ export default function CsvImport() {
                     Es werden <strong>{topLevelCount} Aufgaben</strong> und{" "}
                     <strong>{subtaskCount} Unteraufgaben</strong> in{" "}
                     <strong>{uniqueSections.size} Phasen</strong> zum Projekt{" "}
-                    <strong>"{state.projects.find((p) => p.id === targetProjectId)?.title}"</strong>{" "}
+                    <strong>"{createNewProject ? (newProjectTitle.trim() || fileName.replace(/\.csv$/i, "") || "Importiertes Projekt") : state.projects.find((p) => p.id === targetProjectId)?.title}"</strong>{" "}
                     importiert.
                   </p>
                   {errorCount > 0 && (
@@ -828,8 +917,9 @@ export default function CsvImport() {
                   </div>
                   <h3 className="text-lg font-bold mb-2">Import erfolgreich!</h3>
                   <p className="text-[13px] text-muted-foreground mb-6">
-                    {importResult.tasks} Aufgaben und {importResult.subtasks} Unteraufgaben wurden importiert.
+                    {importResult.tasks} Aufgaben und {importResult.subtasks} Unteraufgaben wurden nach „{importResult.projectTitle}“ importiert.
                     {importResult.sections > 0 && ` ${importResult.sections} neue Phasen wurden erstellt.`}
+                    {importResult.createdProject && " Das Projekt wurde dabei automatisch neu angelegt und ausgewählt."}
                   </p>
                   <div className="flex items-center justify-center gap-3">
                     <Button
@@ -847,8 +937,8 @@ export default function CsvImport() {
                     </Button>
                     <Button
                       onClick={() => {
-                        dispatch({ type: "SET_CURRENT_PROJECT", projectId: targetProjectId });
-                        window.location.href = `/project/${targetProjectId}/board`;
+                        dispatch({ type: "SET_CURRENT_PROJECT", projectId: importResult.projectId });
+                        setLocation(`/project/${importResult.projectId}/board`);
                       }}
                       className="gap-1.5"
                     >

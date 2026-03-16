@@ -12,8 +12,8 @@ import ProjectOverview from "./pages/ProjectOverview";
 import BoardView from "./pages/BoardView";
 import ListView from "./pages/ListView";
 import CsvImport from "./pages/CsvImport";
-
 function Router() {
+  // make sure to consider if you need authentication for certain routes
   return (
     <AppLayout>
       <Switch>
