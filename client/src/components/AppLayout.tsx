@@ -5,7 +5,7 @@
  */
 
 import { useApp } from "@/contexts/AppContext";
-import { getProjectStats } from "@/lib/store";
+import { getProjectStats, type Project } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import {
   BarChart3,
@@ -19,11 +19,16 @@ import {
   Settings,
   Target,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
+import { nanoid } from "nanoid";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
@@ -34,10 +39,41 @@ interface AppLayoutProps {
 
 export default function AppLayout({ children }: AppLayoutProps) {
   const { state, dispatch } = useApp();
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [projectTitle, setProjectTitle] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const projectColors = useMemo(() => ["#4F46E5", "#0F766E", "#B45309", "#7C3AED", "#DC2626", "#2563EB"], []);
 
   const currentProject = state.projects.find((p) => p.id === state.currentProjectId);
+
+  const handleCreateProject = () => {
+    const trimmedTitle = projectTitle.trim();
+    if (!trimmedTitle) {
+      toast.error("Bitte gib zuerst einen Projektnamen ein.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const nextColor = projectColors[state.projects.length % projectColors.length];
+    const newProject: Project = {
+      id: `p_${nanoid(8)}`,
+      title: trimmedTitle,
+      description: projectDescription.trim() || "Neues Projekt ohne Beschreibung.",
+      color: nextColor,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    dispatch({ type: "ADD_PROJECT", project: newProject });
+    dispatch({ type: "SET_CURRENT_PROJECT", projectId: newProject.id });
+    setProjectTitle("");
+    setProjectDescription("");
+    setProjectDialogOpen(false);
+    toast.success(`Projekt „${trimmedTitle}“ wurde angelegt.`);
+    setLocation(`/project/${newProject.id}/overview`);
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -90,12 +126,52 @@ export default function AppLayout({ children }: AppLayoutProps) {
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       Projekte
                     </span>
-                    <button
-                      onClick={() => toast("Neues Projekt erstellen – Feature kommt bald")}
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <Plus size={14} />
-                    </button>
+                    <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
+                      <DialogTrigger asChild>
+                        <button
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label="Neues Projekt anlegen"
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[440px]">
+                        <DialogHeader>
+                          <DialogTitle>Neues Projekt anlegen</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="project-title">Projektname</Label>
+                            <Input
+                              id="project-title"
+                              value={projectTitle}
+                              onChange={(event) => setProjectTitle(event.target.value)}
+                              placeholder="z. B. Antigone Pilot"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="project-description">Kurzbeschreibung</Label>
+                            <Textarea
+                              id="project-description"
+                              value={projectDescription}
+                              onChange={(event) => setProjectDescription(event.target.value)}
+                              placeholder="Worum geht es in diesem Projekt?"
+                              className="min-h-[110px]"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-3 py-2 text-[12px] text-muted-foreground">
+                            <span>Direkt nach dem Anlegen landest du in der Projektübersicht.</span>
+                            <span className="font-mono">{state.projects.length + 1}. Projekt</span>
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <Button variant="outline" onClick={() => setProjectDialogOpen(false)}>
+                              Abbrechen
+                            </Button>
+                            <Button onClick={handleCreateProject}>Projekt erstellen</Button>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </div>
 
                   <div className="space-y-0.5">

@@ -5,7 +5,7 @@
  */
 
 import { useApp } from "@/contexts/AppContext";
-import { createTask, type Task, type Section, type ImportRun, type Priority, type TaskStatus } from "@/lib/store";
+import { type Task, type Section, type ImportRun, type Priority, type TaskStatus } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +73,76 @@ interface ParsedTask {
   errors: string[];
 }
 
+function normalizeCsvText(text: string) {
+  return text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function parseCsvDocument(text: string, delimiter: string) {
+  const rows: string[][] = [];
+  let current = "";
+  let row: string[] = [];
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === delimiter && !inQuotes) {
+      row.push(current.trim());
+      current = "";
+    } else if (char === "\n" && !inQuotes) {
+      row.push(current.trim());
+      rows.push(row);
+      row = [];
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  if (current.length > 0 || row.length > 0) {
+    row.push(current.trim());
+    rows.push(row);
+  }
+
+  return rows.filter((entry) => entry.some((cell) => cell.trim() !== ""));
+}
+
+function parseFlexibleDate(value: string): string | null {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const slashMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, month, day, year] = slashMatch;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  const dotMatch = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (dotMatch) {
+    const [, day, month, year] = dotMatch;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return raw;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function cleanCell(value: string) {
+  return value.replace(/^\uFEFF/, "").trim();
+}
+
 export default function CsvImport() {
   const { state, dispatch } = useApp();
   const [step, setStep] = useState<Step>("upload");
@@ -96,28 +166,24 @@ export default function CsvImport() {
 
   // Parse CSV
   const parseCsv = (text: string) => {
-    const lines = text.split("\n").filter((l) => l.trim());
-    if (lines.length < 2) return;
-
-    // Detect delimiter
-    const firstLine = lines[0];
+    const normalizedText = normalizeCsvText(text);
+    const firstLine = normalizedText.split("\n").find((line) => line.trim()) || "";
     const delimiter = firstLine.includes(";") ? ";" : ",";
+    const matrix = parseCsvDocument(normalizedText, delimiter);
+    if (matrix.length < 2) return;
 
-    const headers = parseCsvLine(firstLine, delimiter);
-    setCsvHeaders(headers);
-
-    const rows: CsvRow[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const values = parseCsvLine(lines[i], delimiter);
+    const headers = matrix[0].map((header) => cleanCell(header));
+    const rows: CsvRow[] = matrix.slice(1).map((values) => {
       const row: CsvRow = {};
-      headers.forEach((h, idx) => {
-        row[h] = values[idx] || "";
+      headers.forEach((header, idx) => {
+        row[header] = cleanCell(values[idx] || "");
       });
-      rows.push(row);
-    }
+      return row;
+    });
+
+    setCsvHeaders(headers);
     setCsvRows(rows);
 
-    // Auto-map columns
     const autoMapping: ColumnMapping = {
       taskName: findBestMatch(headers, ["task name", "aufgabe", "title", "name", "task"]),
       description: findBestMatch(headers, ["description", "beschreibung", "desc", "details"]),
@@ -128,25 +194,6 @@ export default function CsvImport() {
       parentTask: findBestMatch(headers, ["parent task", "übergeordnet", "parent", "elternaufgabe"]),
     };
     setMapping(autoMapping);
-  };
-
-  const parseCsvLine = (line: string, delimiter: string): string[] => {
-    const result: string[] = [];
-    let current = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === delimiter && !inQuotes) {
-        result.push(current.trim());
-        current = "";
-      } else {
-        current += char;
-      }
-    }
-    result.push(current.trim());
-    return result;
   };
 
   const findBestMatch = (headers: string[], candidates: string[]): string => {
@@ -181,30 +228,31 @@ export default function CsvImport() {
   const parseTasksFromMapping = () => {
     const tasks: ParsedTask[] = csvRows.map((row) => {
       const errors: string[] = [];
-      const title = row[mapping.taskName] || "";
-      const parentTask = row[mapping.parentTask] || "";
-      const dueDate = row[mapping.dueDate] || "";
-      const startDate = row[mapping.startDate] || "";
+      const title = cleanCell(row[mapping.taskName] || "");
+      const parentTask = cleanCell(row[mapping.parentTask] || "");
+      const rawDueDate = cleanCell(row[mapping.dueDate] || "");
+      const rawStartDate = cleanCell(row[mapping.startDate] || "");
+      const dueDate = parseFlexibleDate(rawDueDate);
+      const startDate = parseFlexibleDate(rawStartDate);
 
       if (!title) errors.push("Kein Aufgabentitel");
-      if (dueDate && isNaN(Date.parse(dueDate))) errors.push("Ungültiges Fälligkeitsdatum");
-      if (startDate && isNaN(Date.parse(startDate))) errors.push("Ungültiges Startdatum");
+      if (rawDueDate && !dueDate) errors.push("Ungültiges Fälligkeitsdatum");
+      if (rawStartDate && !startDate) errors.push("Ungültiges Startdatum");
 
-      // Parse priority from description
       const desc = row[mapping.description] || "";
       let priority: Priority = "none";
       const descLower = desc.toLowerCase();
-      if (descLower.includes("high") || descLower.includes("hoch")) priority = "high";
-      else if (descLower.includes("medium") || descLower.includes("mittel")) priority = "medium";
-      else if (descLower.includes("low") || descLower.includes("niedrig")) priority = "low";
+      if (descLower.includes("priorität: hoch") || descLower.includes("priority: high") || descLower.includes("hoch")) priority = "high";
+      else if (descLower.includes("priorität: mittel") || descLower.includes("priority: medium") || descLower.includes("mittel")) priority = "medium";
+      else if (descLower.includes("priorität: niedrig") || descLower.includes("priority: low") || descLower.includes("niedrig") || descLower.includes("low")) priority = "low";
 
       return {
         title,
         description: desc,
-        section: row[mapping.section] || "",
-        assignee: row[mapping.assignee] || "",
-        startDate,
-        dueDate,
+        section: cleanCell(row[mapping.section] || ""),
+        assignee: cleanCell(row[mapping.assignee] || ""),
+        startDate: startDate || "",
+        dueDate: dueDate || "",
         parentTask,
         priority,
         isSubtask: !!parentTask,
@@ -274,8 +322,8 @@ export default function CsvImport() {
         status: "todo" as TaskStatus,
         priority: pt.priority,
         assigneeId: null,
-        startDate: pt.startDate && !isNaN(Date.parse(pt.startDate)) ? pt.startDate : null,
-        dueDate: pt.dueDate && !isNaN(Date.parse(pt.dueDate)) ? pt.dueDate : null,
+        startDate: pt.startDate || null,
+        dueDate: pt.dueDate || null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         order: idx,
@@ -303,8 +351,8 @@ export default function CsvImport() {
         status: "todo" as TaskStatus,
         priority: pt.priority,
         assigneeId: null,
-        startDate: pt.startDate && !isNaN(Date.parse(pt.startDate)) ? pt.startDate : null,
-        dueDate: pt.dueDate && !isNaN(Date.parse(pt.dueDate)) ? pt.dueDate : null,
+        startDate: pt.startDate || null,
+        dueDate: pt.dueDate || null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         order: idx,

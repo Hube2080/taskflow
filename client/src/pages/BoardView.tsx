@@ -58,6 +58,31 @@ export default function BoardView() {
       </div>
 
       {/* Board */}
+      {sections.length === 0 ? (
+        <div className="flex-1 p-6">
+          <Card className="h-full border border-dashed border-border bg-card/70">
+            <CardContent className="flex h-full items-center justify-center p-8">
+              <div className="max-w-xl text-center">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                  Leeres Board
+                </p>
+                <h2 className="mt-3 text-2xl font-semibold tracking-tight">Dieses Projekt hat noch keine Spalten.</h2>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                  Das Projekt wurde korrekt angelegt. Importiere jetzt eine CSV-Datei oder ergänze als Nächstes eine erste Projektstruktur.
+                </p>
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                  <Button asChild className="gap-2 text-[13px]">
+                    <a href="/import">CSV importieren</a>
+                  </Button>
+                  <Button variant="outline" asChild className="gap-2 text-[13px]">
+                    <a href={`/project/${projectId}/overview`}>Zur Übersicht</a>
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
       <div className="flex-1 overflow-x-auto overflow-y-hidden">
         <div className="flex gap-4 p-6 h-full min-h-0">
           {sections.map((section) => (
@@ -65,6 +90,7 @@ export default function BoardView() {
           ))}
         </div>
       </div>
+      )}
     </div>
   );
 }

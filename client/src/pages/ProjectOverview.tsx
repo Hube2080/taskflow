@@ -131,6 +131,41 @@ export default function ProjectOverview() {
           </Card>
         </motion.div>
 
+        {tasks.length === 0 && sections.length === 0 && milestones.length === 0 ? (
+          <motion.div
+            className="mt-4"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: 0.1 }}
+          >
+            <Card className="border border-dashed border-border bg-card/80">
+              <CardContent className="p-8">
+                <div className="max-w-2xl">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    Neues Projekt
+                  </p>
+                  <h2 className="mt-3 text-2xl font-semibold tracking-tight">Dieses Projekt ist angelegt und bereit für den ersten Inhalt.</h2>
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                    Du kannst jetzt direkt Aufgaben per CSV importieren oder anschließend im Board die ersten Spalten und Aufgaben anlegen.
+                  </p>
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    <Link href="/import">
+                      <Button className="gap-2 text-[13px]">
+                        <FileSpreadsheet size={14} /> CSV importieren
+                      </Button>
+                    </Link>
+                    <Link href={`/project/${projectId}/board`}>
+                      <Button variant="outline" className="gap-2 text-[13px]">
+                        <LayoutGrid size={14} /> Zum Board
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ) : (
+        <>
         {/* Status Distribution + Team */}
         <div className="grid grid-cols-3 gap-4 mt-4">
           <motion.div
@@ -311,6 +346,8 @@ export default function ProjectOverview() {
             </Card>
           </motion.div>
         </div>
+        </>
+        )}
       </div>
     </ScrollArea>
   );
