@@ -299,9 +299,9 @@ export default function IdeasView() {
               </div>
               <div className="mt-4 space-y-3 text-sm text-muted-foreground">
                 <p>Die aktuelle Struktur trägt bereits:</p>
-                <p>Idee -> Projekt</p>
-                <p>Idee -> Task</p>
-                <p>Projekt -> Task</p>
+                <p>{"Idee -> Projekt"}</p>
+                <p>{"Idee -> Task"}</p>
+                <p>{"Projekt -> Task"}</p>
               </div>
               <div className="mt-5 rounded-xl border border-dashed border-border bg-background/80 p-4 text-[12px] leading-6 text-muted-foreground">
                 Nächster Ausbauschritt möglich: Force-Graph, 3D-Sternenkarte, thematische Cluster, Agenten-Status,
