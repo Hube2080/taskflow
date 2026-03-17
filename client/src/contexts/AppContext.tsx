@@ -8,7 +8,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | null>(null);
 const STORAGE_KEY = "taskflow-app-state";
-const STORAGE_VERSION = "antigone-v1";
+const STORAGE_VERSION = "antigone-v2-detailed";
 const META_KEY = "taskflow-app-meta";
 
 type PersistedMeta = {
