@@ -15,6 +15,7 @@ import {
   type TaskStatus,
 } from "@/lib/store";
 import { trpc } from "@/lib/trpc";
+import { IS_STATIC_PUBLISH } from "@/lib/runtime";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -94,7 +95,10 @@ function TaskDetailContent({ task }: { task: Task }) {
   const [showAddSubtask, setShowAddSubtask] = useState(false);
 
   const trpcUtils = trpc.useUtils();
-  const filesQuery = trpc.files.list.useQuery({ projectId: task.projectId, taskId: task.id });
+  const filesQuery = trpc.files.list.useQuery(
+    { projectId: task.projectId, taskId: task.id },
+    { enabled: !IS_STATIC_PUBLISH }
+  );
   const uploadMutation = trpc.files.upload.useMutation({
     onSuccess: async () => {
       await trpcUtils.files.list.invalidate({ projectId: task.projectId, taskId: task.id });
@@ -136,7 +140,23 @@ function TaskDetailContent({ task }: { task: Task }) {
     toast.success("Unteraufgabe wurde hinzugefügt.");
   };
 
+  const handleDeleteTask = () => {
+    const label = task.parentId ? "Unteraufgabe" : "Aufgabe";
+    const confirmed = window.confirm(
+      `${label} "${task.title}" wirklich löschen? Zugehörige Unteraufgaben und Kommentare werden ebenfalls entfernt.`
+    );
+
+    if (!confirmed) return;
+
+    dispatch({ type: "DELETE_TASK", taskId: task.id });
+    toast.success(`${label} wurde gelöscht.`);
+  };
+
   const handleUploadClick = () => {
+    if (IS_STATIC_PUBLISH) {
+      toast.message("Datei-Upload ist in der statischen GitHub-Pages-Version deaktiviert.");
+      return;
+    }
     fileInputRef.current?.click();
   };
 
@@ -168,20 +188,28 @@ function TaskDetailContent({ task }: { task: Task }) {
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-border px-6 pb-4 pt-5">
-        {parentTask ? (
-          <button
-            onClick={() => dispatch({ type: "SELECT_TASK", taskId: parentTask.id })}
-            className="mb-1 block text-[11px] text-primary hover:underline"
-          >
-            ← {parentTask.title}
-          </button>
-        ) : null}
-        {section ? (
-          <div className="mb-2 flex items-center gap-1.5">
-            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: section.color }} />
-            <span className="text-[11px] text-muted-foreground">{section.title}</span>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            {parentTask ? (
+              <button
+                onClick={() => dispatch({ type: "SELECT_TASK", taskId: parentTask.id })}
+                className="mb-1 block text-[11px] text-primary hover:underline"
+              >
+                ← {parentTask.title}
+              </button>
+            ) : null}
+            {section ? (
+              <div className="mb-2 flex items-center gap-1.5">
+                <div className="h-2 w-2 rounded-full" style={{ backgroundColor: section.color }} />
+                <span className="text-[11px] text-muted-foreground">{section.title}</span>
+              </div>
+            ) : null}
           </div>
-        ) : null}
+          <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleDeleteTask}>
+            <Trash2 size={15} />
+            <span className="sr-only">Aufgabe löschen</span>
+          </Button>
+        </div>
 
         {isEditingTitle ? (
           <Input
@@ -401,7 +429,13 @@ function TaskDetailContent({ task }: { task: Task }) {
                       {subtask.title}
                     </span>
                     <button
-                      onClick={() => dispatch({ type: "DELETE_TASK", taskId: subtask.id })}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        const confirmed = window.confirm(`Unteraufgabe "${subtask.title}" wirklich löschen?`);
+                        if (!confirmed) return;
+                        dispatch({ type: "DELETE_TASK", taskId: subtask.id });
+                        toast.success("Unteraufgabe wurde gelöscht.");
+                      }}
                       className="text-muted-foreground opacity-0 transition-all hover:text-destructive group-hover:opacity-100"
                     >
                       <Trash2 size={12} />
@@ -465,10 +499,16 @@ function TaskDetailContent({ task }: { task: Task }) {
 
             <div className="rounded-xl border border-border bg-muted/15 p-3">
               <div className="mb-3 text-[12px] text-muted-foreground">
-                Dateien werden jetzt serverseitig gespeichert und bleiben projektbezogen verfügbar.
+                {IS_STATIC_PUBLISH
+                  ? "In der statischen Publish-Version ist Datei-Upload deaktiviert. Lokal im Full-Stack-Betrieb bleibt diese Funktion erhalten."
+                  : "Dateien werden jetzt serverseitig gespeichert und bleiben projektbezogen verfügbar."}
               </div>
 
-              {filesQuery.isLoading ? (
+              {IS_STATIC_PUBLISH ? (
+                <div className="rounded-lg border border-dashed border-border bg-background px-4 py-4 text-[13px] text-muted-foreground">
+                  Datei-Upload steht in der GitHub-Pages-Version nicht zur Verfügung.
+                </div>
+              ) : filesQuery.isLoading ? (
                 <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
                   <Loader2 size={14} className="animate-spin" /> Dateien werden geladen...
                 </div>

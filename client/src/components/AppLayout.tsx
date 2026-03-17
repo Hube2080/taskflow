@@ -5,7 +5,7 @@
  */
 
 import { useApp } from "@/contexts/AppContext";
-import { getProjectStats, type Project } from "@/lib/store";
+import { createDefaultSections, createProject, getProjectStats } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import {
   BarChart3,
@@ -14,14 +14,15 @@ import {
   FolderKanban,
   Home,
   LayoutGrid,
+  Lightbulb,
   List,
+  Orbit,
   Plus,
   Settings,
   Target,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { nanoid } from "nanoid";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -55,18 +56,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
       return;
     }
 
-    const now = new Date().toISOString();
     const nextColor = projectColors[state.projects.length % projectColors.length];
-    const newProject: Project = {
-      id: `p_${nanoid(8)}`,
-      title: trimmedTitle,
-      description: projectDescription.trim() || "Neues Projekt ohne Beschreibung.",
-      color: nextColor,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const newProject = createProject(
+      trimmedTitle,
+      projectDescription.trim() || "Neues Projekt ohne Beschreibung.",
+      nextColor
+    );
+    const defaultSections = createDefaultSections(newProject.id);
 
-    dispatch({ type: "ADD_PROJECT", project: newProject });
+    dispatch({ type: "ADD_PROJECT", project: newProject, sections: defaultSections });
     dispatch({ type: "SET_CURRENT_PROJECT", projectId: newProject.id });
     setProjectTitle("");
     setProjectDescription("");
@@ -112,6 +110,20 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 icon={<FileSpreadsheet size={18} />}
                 label="CSV Import"
                 active={location === "/import"}
+                collapsed={sidebarCollapsed}
+              />
+              <SidebarLink
+                href="/ideas"
+                icon={<Lightbulb size={18} />}
+                label="Ideas"
+                active={location === "/ideas"}
+                collapsed={sidebarCollapsed}
+              />
+              <SidebarLink
+                href="/universe"
+                icon={<Orbit size={18} />}
+                label="Universe"
+                active={location === "/universe"}
                 collapsed={sidebarCollapsed}
               />
             </nav>
@@ -183,9 +195,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                           key={project.id}
                           onClick={() => {
                             dispatch({ type: "SET_CURRENT_PROJECT", projectId: project.id });
-                            if (location !== `/project/${project.id}/board` && location !== `/project/${project.id}/list`) {
-                              window.location.href = `/project/${project.id}/board`;
-                            }
+                            setLocation(`/project/${project.id}/board`);
                           }}
                           className={cn(
                             "w-full flex items-center gap-2.5 px-2 py-2 rounded-md text-left transition-colors text-sm",

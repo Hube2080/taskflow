@@ -12,6 +12,8 @@ import ProjectOverview from "./pages/ProjectOverview";
 import BoardView from "./pages/BoardView";
 import ListView from "./pages/ListView";
 import CsvImport from "./pages/CsvImport";
+import IdeasView from "./pages/IdeasView";
+import UniverseView from "./pages/UniverseView";
 function Router() {
   // make sure to consider if you need authentication for certain routes
   return (
@@ -22,6 +24,8 @@ function Router() {
         <Route path="/project/:projectId/board" component={BoardView} />
         <Route path="/project/:projectId/list" component={ListView} />
         <Route path="/import" component={CsvImport} />
+        <Route path="/ideas" component={IdeasView} />
+        <Route path="/universe" component={UniverseView} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

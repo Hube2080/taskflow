@@ -131,7 +131,7 @@ export default function ProjectOverview() {
           </Card>
         </motion.div>
 
-        {tasks.length === 0 && sections.length === 0 && milestones.length === 0 ? (
+        {tasks.length === 0 && milestones.length === 0 ? (
           <motion.div
             className="mt-4"
             initial={{ opacity: 0, y: 8 }}
@@ -146,7 +146,7 @@ export default function ProjectOverview() {
                   </p>
                   <h2 className="mt-3 text-2xl font-semibold tracking-tight">Dieses Projekt ist angelegt und bereit für den ersten Inhalt.</h2>
                   <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                    Du kannst jetzt direkt Aufgaben per CSV importieren oder anschließend im Board die ersten Spalten und Aufgaben anlegen.
+                    Du kannst jetzt direkt Aufgaben per CSV importieren oder im Board sofort die ersten Aufgaben in die vorbereiteten Standard-Spalten eintragen.
                   </p>
                   <div className="mt-6 flex flex-wrap gap-3">
                     <Link href="/import">

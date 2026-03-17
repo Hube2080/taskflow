@@ -8,7 +8,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | null>(null);
 const STORAGE_KEY = "taskflow-app-state";
-const STORAGE_VERSION = "antigone-v2-detailed";
+const STORAGE_VERSION = "antigone-v5-idea-graph";
 const META_KEY = "taskflow-app-meta";
 
 type PersistedMeta = {
@@ -40,6 +40,7 @@ function loadPersistedState(): AppState {
     const milestones = Array.isArray(parsed.milestones) ? parsed.milestones : initialState.milestones;
     const users = Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : initialState.users;
     const importRuns = Array.isArray(parsed.importRuns) ? parsed.importRuns : initialState.importRuns;
+    const ideas = Array.isArray(parsed.ideas) ? parsed.ideas : initialState.ideas;
 
     const hydratedState: AppState = {
       ...initialState,
@@ -51,6 +52,7 @@ function loadPersistedState(): AppState {
       milestones,
       users,
       importRuns,
+      ideas,
       currentProjectId: isValidCurrentProjectId(projects, parsed.currentProjectId) ? parsed.currentProjectId! : initialState.currentProjectId,
       selectedTaskId:
         typeof parsed.selectedTaskId === "string" || parsed.selectedTaskId === null

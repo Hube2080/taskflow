@@ -3,6 +3,8 @@ import { ANTIGONE_COMMENTS, ANTIGONE_IMPORT_RUNS, ANTIGONE_MILESTONES, ANTIGONE_
 
 export type TaskStatus = "backlog" | "todo" | "in_progress" | "review" | "done";
 export type Priority = "none" | "low" | "medium" | "high";
+export type IdeaStatus = "inbox" | "reviewing" | "planned" | "rejected" | "shipped";
+export type IdeaCategory = "integration" | "automation" | "ai" | "research" | "workflow" | "other";
 
 export interface User {
   id: string;
@@ -34,6 +36,7 @@ export interface Task {
   projectId: string;
   sectionId: string;
   parentId: string | null;
+  sourceIdeaId: string | null;
   title: string;
   description: string;
   status: TaskStatus;
@@ -72,6 +75,35 @@ export interface ImportRun {
   importedAt: string;
 }
 
+export interface Idea {
+  id: string;
+  title: string;
+  description: string;
+  category: IdeaCategory;
+  status: IdeaStatus;
+  impact: number;
+  effort: number;
+  linkedProjectId: string | null;
+  linkedTaskId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeGraphNode {
+  id: string;
+  label: string;
+  type: "idea" | "project" | "task";
+  color: string;
+  group: string;
+}
+
+export interface KnowledgeGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  relation: "idea_to_project" | "idea_to_task" | "project_to_task";
+}
+
 export interface AppState {
   projects: Project[];
   sections: Section[];
@@ -80,6 +112,7 @@ export interface AppState {
   milestones: Milestone[];
   users: User[];
   importRuns: ImportRun[];
+  ideas: Idea[];
   currentProjectId: string;
   selectedTaskId: string | null;
 }
@@ -143,6 +176,7 @@ export const initialState: AppState = {
   milestones: MILESTONES,
   users: USERS,
   importRuns: IMPORT_RUNS,
+  ideas: [],
   currentProjectId: "p_antigone",
   selectedTaskId: null,
 };
@@ -156,7 +190,10 @@ export type Action =
   | { type: "ADD_COMMENT"; comment: Comment }
   | { type: "MOVE_TASK"; taskId: string; sectionId: string; status: TaskStatus }
   | { type: "IMPORT_TASKS"; projectId: string; tasks: Task[]; sections: Section[]; importRun: ImportRun }
-  | { type: "ADD_PROJECT"; project: Project }
+  | { type: "ADD_PROJECT"; project: Project; sections: Section[] }
+  | { type: "ADD_IDEA"; idea: Idea }
+  | { type: "UPDATE_IDEA"; ideaId: string; updates: Partial<Idea> }
+  | { type: "DELETE_IDEA"; ideaId: string }
   | { type: "TOGGLE_MILESTONE"; milestoneId: string };
 
 export function appReducer(state: AppState, action: Action): AppState {
@@ -177,11 +214,21 @@ export function appReducer(state: AppState, action: Action): AppState {
     case "ADD_TASK":
       return { ...state, tasks: [...state.tasks, action.task] };
     case "DELETE_TASK":
+      {
+        const deletedTaskIds = new Set(
+          state.tasks
+            .filter((task) => task.id === action.taskId || task.parentId === action.taskId)
+            .map((task) => task.id)
+        );
+
       return {
         ...state,
-        tasks: state.tasks.filter((task) => task.id !== action.taskId && task.parentId !== action.taskId),
-        selectedTaskId: state.selectedTaskId === action.taskId ? null : state.selectedTaskId,
+        tasks: state.tasks.filter((task) => !deletedTaskIds.has(task.id)),
+        comments: state.comments.filter((comment) => !deletedTaskIds.has(comment.taskId)),
+        selectedTaskId:
+          state.selectedTaskId && deletedTaskIds.has(state.selectedTaskId) ? null : state.selectedTaskId,
       };
+      }
     case "ADD_COMMENT":
       return { ...state, comments: [...state.comments, action.comment] };
     case "MOVE_TASK":
@@ -208,7 +255,28 @@ export function appReducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         projects: [...state.projects, action.project],
+        sections: [...state.sections, ...action.sections],
         currentProjectId: action.project.id,
+        selectedTaskId: null,
+      };
+    case "ADD_IDEA":
+      return {
+        ...state,
+        ideas: [action.idea, ...state.ideas],
+      };
+    case "UPDATE_IDEA":
+      return {
+        ...state,
+        ideas: state.ideas.map((idea) =>
+          idea.id === action.ideaId
+            ? { ...idea, ...action.updates, updatedAt: new Date().toISOString() }
+            : idea
+        ),
+      };
+    case "DELETE_IDEA":
+      return {
+        ...state,
+        ideas: state.ideas.filter((idea) => idea.id !== action.ideaId),
       };
     case "TOGGLE_MILESTONE":
       return {
@@ -284,6 +352,7 @@ export function createTask(projectId: string, sectionId: string, title: string, 
     projectId,
     sectionId,
     parentId,
+    sourceIdeaId: null,
     title,
     description: "",
     status: "todo",
@@ -295,6 +364,136 @@ export function createTask(projectId: string, sectionId: string, title: string, 
     updatedAt: new Date().toISOString(),
     order: 999,
   };
+}
+
+export function createProject(title: string, description: string, color: string): Project {
+  const now = new Date().toISOString();
+
+  return {
+    id: `p_${nanoid(8)}`,
+    title,
+    description,
+    color,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function createDefaultSections(projectId: string): Section[] {
+  const baseSections: Array<{ title: string; color: string }> = [
+    { title: "Backlog", color: "#94A3B8" },
+    { title: "To Do", color: "#6366F1" },
+    { title: "In Arbeit", color: "#F59E0B" },
+    { title: "Review", color: "#7C3AED" },
+    { title: "Erledigt", color: "#10B981" },
+  ];
+
+  return baseSections.map((section, index) => ({
+    id: `section_${projectId}_${index + 1}`,
+    projectId,
+    title: section.title,
+    order: index,
+    color: section.color,
+  }));
+}
+
+export function createIdea(input: {
+  title: string;
+  description: string;
+  category: IdeaCategory;
+  status: IdeaStatus;
+  impact: number;
+  effort: number;
+  linkedProjectId?: string | null;
+}): Idea {
+  const now = new Date().toISOString();
+
+  return {
+    id: `idea_${nanoid(8)}`,
+    title: input.title,
+    description: input.description,
+    category: input.category,
+    status: input.status,
+    impact: input.impact,
+    effort: input.effort,
+    linkedProjectId: input.linkedProjectId ?? null,
+    linkedTaskId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function getProjectDefaultSectionId(state: AppState, projectId: string): string | null {
+  const sections = getProjectSections(state, projectId);
+  return sections[0]?.id ?? null;
+}
+
+export function getKnowledgeGraph(state: AppState): { nodes: KnowledgeGraphNode[]; edges: KnowledgeGraphEdge[] } {
+  const nodes: KnowledgeGraphNode[] = [
+    ...state.projects.map((project) => ({
+      id: project.id,
+      label: project.title,
+      type: "project" as const,
+      color: project.color,
+      group: "projects",
+    })),
+    ...state.ideas.map((idea) => ({
+      id: idea.id,
+      label: idea.title,
+      type: "idea" as const,
+      color:
+        idea.status === "planned"
+          ? "#2563EB"
+          : idea.status === "shipped"
+          ? "#059669"
+          : idea.status === "rejected"
+          ? "#E11D48"
+          : "#7C3AED",
+      group: "ideas",
+    })),
+    ...state.tasks
+      .filter((task) => task.parentId === null)
+      .map((task) => ({
+        id: task.id,
+        label: task.title,
+        type: "task" as const,
+        color: STATUS_CONFIG[task.status].color,
+        group: "tasks",
+      })),
+  ];
+
+  const edges: KnowledgeGraphEdge[] = [
+    ...state.ideas.flatMap((idea) => {
+      const linkedEdges: KnowledgeGraphEdge[] = [];
+      if (idea.linkedProjectId) {
+        linkedEdges.push({
+          id: `edge_${idea.id}_${idea.linkedProjectId}`,
+          source: idea.id,
+          target: idea.linkedProjectId,
+          relation: "idea_to_project",
+        });
+      }
+      if (idea.linkedTaskId) {
+        linkedEdges.push({
+          id: `edge_${idea.id}_${idea.linkedTaskId}`,
+          source: idea.id,
+          target: idea.linkedTaskId,
+          relation: "idea_to_task",
+        });
+      }
+      return linkedEdges;
+    }),
+    ...state.tasks
+      .filter((task) => task.parentId === null)
+      .map((task) => ({
+        id: `edge_${task.projectId}_${task.id}`,
+        source: task.projectId,
+        target: task.id,
+        relation: "project_to_task" as const,
+      })),
+  ];
+
+  return { nodes, edges };
 }
 
 export const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
@@ -310,4 +509,21 @@ export const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; b
   low: { label: "Niedrig", color: "#22C55E", bg: "border-emerald-200 text-emerald-700 bg-emerald-50" },
   medium: { label: "Mittel", color: "#F59E0B", bg: "border-amber-200 text-amber-700 bg-amber-50" },
   high: { label: "Hoch", color: "#EF4444", bg: "border-red-200 text-red-700 bg-red-50" },
+};
+
+export const IDEA_STATUS_CONFIG: Record<IdeaStatus, { label: string; badgeClassName: string }> = {
+  inbox: { label: "Inbox", badgeClassName: "border-slate-200 text-slate-600 bg-slate-50" },
+  reviewing: { label: "Bewerten", badgeClassName: "border-amber-200 text-amber-700 bg-amber-50" },
+  planned: { label: "Geplant", badgeClassName: "border-blue-200 text-blue-700 bg-blue-50" },
+  rejected: { label: "Verworfen", badgeClassName: "border-rose-200 text-rose-700 bg-rose-50" },
+  shipped: { label: "Umgesetzt", badgeClassName: "border-emerald-200 text-emerald-700 bg-emerald-50" },
+};
+
+export const IDEA_CATEGORY_CONFIG: Record<IdeaCategory, { label: string }> = {
+  integration: { label: "Integration" },
+  automation: { label: "Automation" },
+  ai: { label: "AI" },
+  research: { label: "Research" },
+  workflow: { label: "Workflow" },
+  other: { label: "Sonstiges" },
 };
