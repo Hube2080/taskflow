@@ -6,6 +6,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { createProjectFile, listProjectFiles } from "./db";
 import { storagePut } from "./storage";
+import { voiceMemoService } from "./voiceMemos.service";
 
 const uploadFileInput = z.object({
   projectId: z.string().min(1),
@@ -19,6 +20,25 @@ const uploadFileInput = z.object({
 const listFilesInput = z.object({
   projectId: z.string().min(1),
   taskId: z.string().min(1).nullable().optional(),
+});
+
+const listVoiceMemosInput = z.object({
+  query: z.string().trim().optional(),
+});
+
+const getVoiceMemoInput = z.object({
+  memoId: z.string().min(1),
+});
+
+const linkVoiceMemoInput = z.object({
+  memoId: z.string().min(1),
+  projectId: z.string().min(1).nullable().optional(),
+  ideaId: z.string().min(1).nullable().optional(),
+  taskId: z.string().min(1).nullable().optional(),
+});
+
+const importVoiceMemosInput = z.object({
+  directory: z.string().min(1).optional(),
 });
 
 export const appRouter = router({
@@ -53,6 +73,21 @@ export const appRouter = router({
         mimeType: input.mimeType,
         sizeBytes: input.sizeBytes,
       });
+    }),
+  }),
+  voiceMemos: router({
+    status: protectedProcedure.query(async () => voiceMemoService.getStatus()),
+    list: protectedProcedure.input(listVoiceMemosInput).query(async ({ input }) => {
+      return voiceMemoService.list(input.query);
+    }),
+    byId: protectedProcedure.input(getVoiceMemoInput).query(async ({ input }) => {
+      return voiceMemoService.getById(input.memoId);
+    }),
+    importFromDirectory: protectedProcedure
+      .input(importVoiceMemosInput)
+      .mutation(async ({ input }) => voiceMemoService.importFromDirectory(input.directory)),
+    link: protectedProcedure.input(linkVoiceMemoInput).mutation(async ({ input }) => {
+      return voiceMemoService.link(input);
     }),
   }),
 });

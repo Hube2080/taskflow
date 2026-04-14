@@ -1,4 +1,10 @@
 /**
+ * Legacy note:
+ * This helper belongs to the older custom voice-assistant path.
+ * Antigone is transitioning toward Ollama + Open WebUI + Home Assistant orchestration,
+ * so this file is kept for compatibility and auditability only in this night run.
+ */
+/**
  * Voice transcription helper using internal Speech-to-Text service
  *
  * Frontend implementation guide:

@@ -8,7 +8,9 @@ import { useApp } from "@/contexts/AppContext";
 import { createDefaultSections, createProject, getProjectStats } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import {
+  AudioLines,
   BarChart3,
+  Bot,
   ChevronDown,
   FileSpreadsheet,
   FolderKanban,
@@ -117,6 +119,20 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 icon={<Lightbulb size={18} />}
                 label="Ideas"
                 active={location === "/ideas"}
+                collapsed={sidebarCollapsed}
+              />
+              <SidebarLink
+                href="/antigone"
+                icon={<Bot size={18} />}
+                label="Antigone"
+                active={location === "/antigone"}
+                collapsed={sidebarCollapsed}
+              />
+              <SidebarLink
+                href="/voice-memos"
+                icon={<AudioLines size={18} />}
+                label="Sprachmemos"
+                active={location === "/voice-memos"}
                 collapsed={sidebarCollapsed}
               />
               <SidebarLink

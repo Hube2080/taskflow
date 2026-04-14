@@ -108,3 +108,7 @@ temp/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
+
+# Local runtime data
+.taskflow-data/
+.antigone-runtime/
