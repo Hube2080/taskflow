@@ -1,0 +1,3 @@
+Antigone note. I want a calmer local dashboard for voice notes. The core need is not another busy analytics tool. I need orientation, recurring themes, and a way to see which concerns keep returning.
+
+The most important themes are local-first setup, clean handoff, privacy, and turning raw transcripts into useful decisions. A recurring tension is speed versus quality. A recurring goal is to wake up to something inspectable and reliable.

@@ -112,3 +112,27 @@ temp/
 # Local runtime data
 .taskflow-data/
 .antigone-runtime/
+
+# Antigone local transcript analysis
+.venv
+.venv*
+.venv/
+.venv*/
+__pycache__/
+*.py[cod]
+.streamlit/secrets.toml
+data/raw_transcripts/
+data/unzipped_imports/
+data/processed/
+data/checkins/
+data/medications/
+data/settings/
+outputs/wordclouds/
+outputs/graphs/
+outputs/analysis/
+*.zip
+*.parquet
+*.pkl
+*.joblib
+.hf-cache/
+.cache/huggingface/

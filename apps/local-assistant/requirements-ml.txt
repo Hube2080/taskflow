@@ -1,0 +1,3 @@
+# Optional local Hugging Face semantic embeddings.
+# Install with: ./scripts/setup_analysis_app.sh --with-ml
+sentence-transformers==5.1.2
