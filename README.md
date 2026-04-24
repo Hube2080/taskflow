@@ -2,7 +2,7 @@
 
 This repository now serves two purposes during the Antigone transition:
 
-- preserve the current `taskflow` app and custom voice-memo workflow as a legacy path
+- preserve and evolve the current Manus-led web app in `apps/web`
 - document and support the new local-first Antigone stack built around Ollama, Open WebUI, and Home Assistant
 
 This was intentionally handled as a conservative transition pass. No risky automation was added for the UTM Home Assistant VM, private Apple data, or personal cloud-storage paths.
@@ -19,17 +19,17 @@ This was intentionally handled as a conservative transition pass. No risky autom
 ## Partially done
 
 - Home Assistant exists in UTM but remains a manual setup path
-- the future Antigone frontend now has a minimal placeholder route at `#/antigone`
+- the Antigone web experience now lives in `apps/web` and uses the shared memory/contracts structure
 - the older custom voice path is still present and intentionally not removed
 
 ## Legacy components
 
 These areas belong to the older custom assistant approach and are preserved for compatibility and auditability:
 
-- `server/_core/voiceTranscription.ts`
-- `server/voiceMemos.*`
-- `shared/voiceMemos.ts`
-- `client/src/pages/VoiceMemosView.tsx`
+- `apps/web/server/_core/voiceTranscription.ts`
+- `apps/web/server/voiceMemos.*`
+- `apps/web/shared/voiceMemos.ts`
+- `apps/web/client/src/pages/VoiceMemosView.tsx`
 
 Important: the current voice-memo configuration includes a default path into personal cloud storage. That path was not modified or automated in this run.
 
@@ -46,3 +46,4 @@ Important: the current voice-memo configuration includes a default path into per
 - See [RUNBOOK.md](/Users/hubertusvonhaller/Documents/Playground/taskflow/RUNBOOK.md) for commands and failure handling
 - See [NEXT_STEPS.md](/Users/hubertusvonhaller/Documents/Playground/taskflow/NEXT_STEPS.md) for the recommended follow-up sequence
 - See [CHANGELOG_NIGHT_RUN.md](/Users/hubertusvonhaller/Documents/Playground/taskflow/CHANGELOG_NIGHT_RUN.md) for the concise morning summary
+- See [MIGRATION_STATUS.md](/Users/hubertusvonhaller/Documents/Playground/taskflow/MIGRATION_STATUS.md) for the `apps/web` migration handoff

@@ -1,3 +1,5 @@
+import { getRepoDataPath } from "./repoRoot";
+
 export const ENV = {
   appId: process.env.VITE_APP_ID ?? "",
   cookieSecret: process.env.JWT_SECRET ?? "",
@@ -15,6 +17,5 @@ export const ENV = {
   voiceMemosDirectory:
     process.env.VOICE_MEMOS_DIR ??
     "/Users/hubertusvonhaller/Library/CloudStorage/GoogleDrive-hubertus.haller@gmail.com/Meine Ablage/00_ProjectHube/My AI Assistant /Test Sprachmemos",
-  voiceMemoStorePath:
-    process.env.VOICE_MEMO_STORE_PATH ?? `${process.cwd()}/.taskflow-data/voice-memos.json`,
+  voiceMemoStorePath: process.env.VOICE_MEMO_STORE_PATH ?? getRepoDataPath(".taskflow-data", "voice-memos.json"),
 };
